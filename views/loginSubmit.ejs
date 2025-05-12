@@ -1,0 +1,19 @@
+<%- include('templates/header') %>
+
+<div class="container">
+<% if (invalidEmail) { %>
+    <p>Invalid Email</p>
+<% } %>
+
+<% if (userNotFound) { %>
+    <p>Account not found</p>
+<% } %>
+
+<% if (wrongPassword) { %>
+    <p>Incorrect Password</p>
+<% } %>
+
+<a class="btn btn-primary btn-lg px-4 gap-3" href="/Login" role="button">Try Again</a>
+</div>
+
+<%- include('templates/footer') %>

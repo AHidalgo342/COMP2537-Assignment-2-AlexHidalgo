@@ -1,0 +1,7 @@
+<li>
+    <%= user.username %> (<%= user.email %>) [<%= user.user_type %>] 
+    <a class="btn btn-success rounded-pill px-3" 
+        href="/users/<%= user.username %>/user" type="button">User</a> 
+    <a class="btn btn-danger rounded-pill px-3" 
+        href="/users/<%= user.username %>/admin" type="button">Admin</a>
+</li>
