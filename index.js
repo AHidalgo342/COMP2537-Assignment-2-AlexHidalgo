@@ -47,6 +47,7 @@ app.use(session({
     resave: true
 }));
 
+/* authorization middleware */
 function isValidSession(req) {
     if (req.session.authenticated) {
         return true;
@@ -54,7 +55,7 @@ function isValidSession(req) {
     return false;
 }
 
-function sessionValidation(req,res,next) {
+function sessionValidation(req, res, next) {
     if (isValidSession(req)) {
         next();
     }
@@ -62,7 +63,6 @@ function sessionValidation(req,res,next) {
         res.redirect('/login');
     }
 }
-
 
 function isAdmin(req) {
     if (req.session.user_type == 'admin') {
@@ -74,13 +74,15 @@ function isAdmin(req) {
 function adminAuthorization(req, res, next) {
     if (!isAdmin(req)) {
         res.status(403);
-        res.render("errorMessage", {error: "Yeaaahhhhh sorry, but it turns out you're Not Authorized to see this page :("});
+        res.render("errorMessage", { error: "Yeaaahhhhh sorry, but it turns out you're Not Authorized to see this page :(" });
         return;
     }
     else {
         next();
     }
 }
+/* authorization middleware END */
+
 
 app.get('/', (req, res) => {
     var authenticated = req.session.authenticated;
@@ -94,7 +96,6 @@ app.get('/', (req, res) => {
     });
 });
 
-// other pages here
 app.get('/signUp', (req, res) => {
     res.render("signup");
 });
@@ -126,6 +127,7 @@ app.post('/signupSubmit', async (req, res) => {
     const invalidPassword = validatePassword.validate({ password });
     const invalidEmail = validateEmail.validate({ email });
 
+    // if you encounter an error at all, catch them here.
     if (invalidName.error != null || invalidPassword.error != null || invalidEmail.error != null) {
         res.render('signupSubmit', {
             invalidName: invalidName,
@@ -134,12 +136,14 @@ app.post('/signupSubmit', async (req, res) => {
         });
         return;
     }
+    // else create the acccount
 
     var hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    await userCollection.insertOne({ username: username, password: hashedPassword, email: email, user_type: "user"});
+    await userCollection.insertOne({ username: username, password: hashedPassword, email: email, user_type: "user" });
     console.log("Inserted user");
 
+    // and log them in
     req.session.authenticated = true;
     req.session.username = username;
     req.session.cookie.maxAge = expireTime;
@@ -155,6 +159,7 @@ app.post('/loginSubmit', async (req, res) => {
     const schema = Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net', 'ca'] } });
     const validationResult = schema.validate(email);
 
+    // invalid email?
     if (validationResult.error != null) {
         res.render("loginSubmit", {
             invalidEmail: 1,
@@ -166,10 +171,11 @@ app.post('/loginSubmit', async (req, res) => {
 
     // only the email is used to check the database.
     // at this point the email has already been validated for any NoSQL injection.
-    const result = await userCollection.find({ email: email }).project({ email: 1, username: 1, password: 1, user_type: 1, _id: 1}).toArray();
+    const result = await userCollection.find({ email: email }).project({ email: 1, username: 1, password: 1, user_type: 1, _id: 1 }).toArray();
 
     console.log(result);
 
+    // account not found?
     if (result.length != 1) {
         res.render("loginSubmit", {
             invalidEmail: 0,
@@ -179,8 +185,11 @@ app.post('/loginSubmit', async (req, res) => {
         return;
     }
 
+    // if there is an account, check it's password.
     if (result.length == 1 && await bcrypt.compare(password, result[0].password)) {
+
         console.log("correct password");
+
         req.session.authenticated = true;
         req.session.username = result[0].username; // the username is stored in the session.
         req.session.user_type = result[0].user_type;
@@ -190,6 +199,7 @@ app.post('/loginSubmit', async (req, res) => {
         return;
     }
     else {
+        // if it's the wrong password, boot 'em out
         res.render("loginSubmit", {
             invalidEmail: 0,
             userNotFound: 0,
@@ -199,41 +209,48 @@ app.post('/loginSubmit', async (req, res) => {
     }
 });
 
+// can't view if you're not a member
 app.get('/members', sessionValidation, (req, res) => {
     res.render("members");
 });
 
-app.get('/admin', sessionValidation, adminAuthorization, async (req,res) => {
-    const result = await userCollection.find().project({username: 1, email: 1, user_type: 1}).toArray();
+// can't view if you're not a member OR not an admin
+app.get('/admin', sessionValidation, adminAuthorization, async (req, res) => {
+    const result = await userCollection.find().project({ username: 1, email: 1, user_type: 1 }).toArray();
 
-    res.render("admin", {users: result});
+    res.render("admin", { users: result });
 });
 
-app.get('/users/:user/:type', sessionValidation, adminAuthorization, async (req,res) => {
+// no session? not admin? sorryyyyyy
+app.get('/users/:user/:type', sessionValidation, adminAuthorization, async (req, res) => {
+
     var username = req.params.user;
     var user_type = req.params.type;
 
     console.log(username, user_type);
 
+    // check for malicious usernames
     const validateName = Joi.object(
         {
             username: Joi.string().alphanum().max(20).required()
         });
     const invalidName = validateName.validate({ username });
 
-
-    if((user_type != 'admin' && user_type != 'user') || invalidName.error != null) {
-        res.render("errorMessage", {error: "What, are you TRYING to break something?"});
+    // this is a two in one
+    // if the given user_type is not the following two, you're booted
+    // and if there's an error with the name, same thing.
+    if ((user_type != 'admin' && user_type != 'user') || invalidName.error != null) {
+        res.render("errorMessage", { error: "What, are you TRYING to break something?" });
         return;
     }
 
-    await userCollection.updateOne({ username: username },
+    // Check for a match before updating the user_type
+    await userCollection.findOneAndUpdate({ username: username },
         {
-            $set: {'user_type': user_type},
-            $currentDate: {lastModified: true}
-        }
-    );
-    
+            $set: { 'user_type': user_type },
+            $currentDate: { lastModified: true }
+        });
+
     res.redirect("/admin");
 });
 
